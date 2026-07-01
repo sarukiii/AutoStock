@@ -13,3 +13,6 @@ mysql-connector-j-9.1.0.jar
 
 # Logs
 *.log
+
+# Credenciales de base de datos
+src/config/db.properties

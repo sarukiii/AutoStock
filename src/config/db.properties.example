@@ -1,0 +1,3 @@
+db.url=jdbc:mysql://localhost:3306/autostock_inventory
+db.user=root
+db.password=tu_contraseña

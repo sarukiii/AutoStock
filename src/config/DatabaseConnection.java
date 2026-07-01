@@ -3,15 +3,38 @@ package config;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.io.InputStream;
+import java.io.IOException;
 
 public class DatabaseConnection {
     private static final Logger LOGGER = Logger.getLogger(DatabaseConnection.class.getName());
 
-    private static final String URL = "jdbc:mysql://localhost:3306/autostock_inventory";
-    private static final String USER = "root";
-    private static final String PASSWORD = "";
+    // Las credenciales se cargan desde db.properties, no están hardcodeadas en el
+    // código.
+    // Esto evita exponer datos sensibles en el repositorio.
+    private static final String URL;
+    private static final String USER;
+    private static final String PASSWORD;
+
+    static {
+        Properties props = new Properties();
+        try (InputStream input = DatabaseConnection.class
+                .getClassLoader()
+                .getResourceAsStream("config/db.properties")) {
+            if (input == null) {
+                throw new RuntimeException("No se encontró el archivo db.properties");
+            }
+            props.load(input);
+        } catch (IOException e) {
+            throw new RuntimeException("Error al cargar db.properties", e);
+        }
+        URL = props.getProperty("db.url");
+        USER = props.getProperty("db.user");
+        PASSWORD = props.getProperty("db.password");
+    }
 
     private static Connection connection = null;
 
@@ -41,4 +64,3 @@ public class DatabaseConnection {
         }
     }
 }
-
