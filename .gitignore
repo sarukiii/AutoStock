@@ -1,0 +1,15 @@
+# Archivos compilados
+bin/
+
+# Jar duplicado en la raíz
+mysql-connector-j-9.1.0.jar
+
+# Archivos de Eclipse
+.classpath
+.project
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
