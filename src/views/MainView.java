@@ -9,24 +9,45 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
+/**
+ * Ventana principal de la aplicación AutoStock.
+ *
+ * Es la ventana central que el usuario ve después de iniciar sesión.
+ * Contiene una barra de menú, una barra de herramientas y un panel
+ * de contenido central donde se cargan dinámicamente los distintos
+ * módulos de la aplicación (productos, ventas, clientes, etc.).
+ *
+ * El menú y la barra de herramientas se construyen de forma dinámica
+ * según el rol del usuario: los empleados solo ven los módulos de
+ * productos y ventas, mientras que los administradores también tienen
+ * acceso a usuarios, clientes, proveedores e informes.
+ *
+ * Extiende JFrame para ser la ventana principal de la aplicación.
+ */
 public class MainView extends JFrame {
+
+    // Panel central donde se cargan dinámicamente los paneles de cada módulo
     private final JPanel contentPanel;
+    // Etiqueta en la barra de estado inferior para mostrar mensajes informativos
     private final JLabel statusLabel;
 
     public MainView() {
         setTitle("AutoStock Sistema de Inventarios");
         setSize(1024, 768);
+        // DO_NOTHING_ON_CLOSE permite interceptar el cierre y mostrar un diálogo
+        // de confirmación antes de salir, en lugar de cerrar directamente
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        // Diseño principal
         setLayout(new BorderLayout());
 
-        // Barra de herramientas
+        // --- Barra de herramientas superior ---
         JToolBar toolBar = createToolBar();
         add(toolBar, BorderLayout.NORTH);
 
-        // StatusBar
+        // --- Barra de estado inferior ---
+        // Muestra el nombre y rol del usuario logueado a la derecha,
+        // y mensajes informativos del sistema a la izquierda
         JPanel statusBar = new JPanel(new BorderLayout());
         statusBar.setBorder(BorderFactory.createEtchedBorder());
         statusLabel = new JLabel(" ");
@@ -36,18 +57,19 @@ public class MainView extends JFrame {
         statusBar.add(usuarioLabel, BorderLayout.EAST);
         add(statusBar, BorderLayout.SOUTH);
 
-        // Menú principal
+        // --- Barra de menú ---
         setJMenuBar(createMenuBar());
 
-        // Panel contenedor
+        // --- Panel de contenido central ---
+        // Los paneles de cada módulo se cargan aquí dinámicamente al navegar
         contentPanel = new JPanel(new BorderLayout());
         contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         add(contentPanel, BorderLayout.CENTER);
 
-        // Panel de bienvenida
+        // Mostramos el panel de bienvenida al arrancar
         showBienvenidaPanel();
 
-        // Cerrar de la ventana
+        // Interceptamos el cierre de ventana para mostrar confirmación antes de salir
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -56,25 +78,33 @@ public class MainView extends JFrame {
         });
     }
 
+    /**
+     * Construye la barra de menú de la aplicación.
+     *
+     * El menú "Gestiones Admin" solo se añade si el usuario tiene rol
+     * de Administrador, ocultando las opciones restringidas a empleados.
+     *
+     * @return la barra de menú configurada
+     */
     private JMenuBar createMenuBar() {
         JMenuBar menuBar = new JMenuBar();
         boolean isAdmin = AppState.getInstance().isAdmin();
 
-        // Menu 'Archivo'
+        // --- Menú Archivo ---
         JMenu archivoMenu = new JMenu("Archivo");
         JMenuItem exitItem = new JMenuItem("Salir");
         exitItem.addActionListener(e -> cierreExit());
         archivoMenu.add(exitItem);
         menuBar.add(archivoMenu);
 
-        // Menú de inventario
+        // --- Menú Inventario (accesible para todos los roles) ---
         JMenu inventarioMenu = new JMenu("Inventario");
         JMenuItem productosItem = new JMenuItem("Productos");
         productosItem.addActionListener(e -> showProductosPanel());
         inventarioMenu.add(productosItem);
         menuBar.add(inventarioMenu);
 
-        // Menú ventas
+        // --- Menú Ventas (accesible para todos los roles) ---
         JMenu ventasMenu = new JMenu("Ventas");
         JMenuItem newVentaItem = new JMenuItem("Nueva venta");
         newVentaItem.addActionListener(e -> showNewVentaPanel());
@@ -84,7 +114,7 @@ public class MainView extends JFrame {
         ventasMenu.add(historialVentasItem);
         menuBar.add(ventasMenu);
 
-        // Menú administradores (solo visible para el rol de administrador)
+        // --- Menú Gestiones Admin (solo visible para administradores) ---
         if (isAdmin) {
             JMenu adminMenu = new JMenu("Gestiones Admin");
 
@@ -107,7 +137,7 @@ public class MainView extends JFrame {
             menuBar.add(adminMenu);
         }
 
-        // Menú ayuda
+        // --- Menú Ayuda ---
         JMenu ayudaMenu = new JMenu("Ayuda");
         JMenuItem infoItem = new JMenuItem("Info AutoStock...");
         infoItem.addActionListener(e -> showInfoDialog());
@@ -117,12 +147,22 @@ public class MainView extends JFrame {
         return menuBar;
     }
 
+    /**
+     * Construye la barra de herramientas de acceso rápido.
+     *
+     * Incluye los accesos más frecuentes: nueva venta y productos para todos,
+     * y usuarios e informes solo para administradores. setFloatable(false)
+     * impide que el usuario pueda arrastrar y despegar la barra.
+     *
+     * @return la barra de herramientas configurada
+     */
     private JToolBar createToolBar() {
         JToolBar toolBar = new JToolBar();
+        // Impedimos que el usuario pueda arrastrar la barra de herramientas
         toolBar.setFloatable(false);
         boolean isAdmin = AppState.getInstance().isAdmin();
 
-        // Botones barra herramientas
+        // Botones accesibles para todos los roles
         JButton newVentaButton = new JButton("Nueva venta");
         newVentaButton.addActionListener(e -> showNewVentaPanel());
         toolBar.add(newVentaButton);
@@ -133,6 +173,7 @@ public class MainView extends JFrame {
 
         toolBar.addSeparator();
 
+        // Botones exclusivos para administradores
         if (isAdmin) {
             JButton usuariosButton = new JButton("Usuarios");
             usuariosButton.addActionListener(e -> showUsuariosPanel());
@@ -152,6 +193,10 @@ public class MainView extends JFrame {
         return toolBar;
     }
 
+    /**
+     * Muestra el panel de bienvenida en el área de contenido central.
+     * Es el panel inicial que se muestra al entrar a la aplicación.
+     */
     private void showBienvenidaPanel() {
         contentPanel.removeAll();
         JPanel bienvenidaPanel = new JPanel(new BorderLayout());
@@ -165,6 +210,10 @@ public class MainView extends JFrame {
         contentPanel.repaint();
     }
 
+    /**
+     * Carga el panel de gestión de productos en el área de contenido.
+     * Accesible para todos los roles.
+     */
     private void showProductosPanel() {
         contentPanel.removeAll();
         contentPanel.add(new ProductosPanel());
@@ -173,6 +222,10 @@ public class MainView extends JFrame {
         setStatusMessage("Panel de productos cargado");
     }
 
+    /**
+     * Carga el panel de nueva venta en el área de contenido.
+     * Accesible para todos los roles.
+     */
     private void showNewVentaPanel() {
         contentPanel.removeAll();
         contentPanel.add(new NewVentaPanel());
@@ -180,6 +233,10 @@ public class MainView extends JFrame {
         contentPanel.repaint();
     }
 
+    /**
+     * Carga el panel de historial de ventas en el área de contenido.
+     * Accesible para todos los roles.
+     */
     private void showHistorialVentaPanel() {
         contentPanel.removeAll();
         contentPanel.add(new HistorialVentasPanel());
@@ -187,6 +244,10 @@ public class MainView extends JFrame {
         contentPanel.repaint();
     }
 
+    /**
+     * Carga el panel de gestión de usuarios en el área de contenido.
+     * Solo accesible para administradores.
+     */
     private void showUsuariosPanel() {
         contentPanel.removeAll();
         contentPanel.add(new UsuariosPanel());
@@ -195,6 +256,10 @@ public class MainView extends JFrame {
         setStatusMessage("Panel de usuarios cargado");
     }
 
+    /**
+     * Carga el panel de gestión de clientes en el área de contenido.
+     * Solo accesible para administradores.
+     */
     private void showClientesPanel() {
         contentPanel.removeAll();
         contentPanel.add(new ClientesPanel());
@@ -203,6 +268,10 @@ public class MainView extends JFrame {
         setStatusMessage("Panel de clientes cargado");
     }
 
+    /**
+     * Carga el panel de gestión de proveedores en el área de contenido.
+     * Solo accesible para administradores.
+     */
     private void showProveedoresPanel() {
         contentPanel.removeAll();
         contentPanel.add(new ProveedoresPanel());
@@ -211,6 +280,10 @@ public class MainView extends JFrame {
         setStatusMessage("Panel de proveedores cargado");
     }
 
+    /**
+     * Carga el panel de informes en el área de contenido.
+     * Solo accesible para administradores.
+     */
     private void showInformesPanel() {
         contentPanel.removeAll();
         contentPanel.add(new InformesPanel());
@@ -218,20 +291,31 @@ public class MainView extends JFrame {
         contentPanel.repaint();
     }
 
+    /**
+     * Muestra el diálogo de información sobre la aplicación.
+     */
     private void showInfoDialog() {
         JOptionPane.showMessageDialog(this,
-                "AutoStock Sitema de Inventarios\\nVersion 1.0\\n© 2024 AutoStock",
+                "AutoStock Sistema de Inventarios\nVersión 1.0\n© 2024 AutoStock",
                 "Sobre nosotros...",
                 JOptionPane.INFORMATION_MESSAGE);
     }
 
+    /**
+     * Gestiona el cierre de sesión del usuario.
+     *
+     * Muestra un diálogo de confirmación antes de cerrar la sesión.
+     * Si el usuario confirma, limpia el estado de la sesión en AppState
+     * y vuelve a la pantalla de login.
+     */
     private void cierreLogout() {
         int respuesta = JOptionPane.showConfirmDialog(this,
-        		"¿Estás segur@ de que quieres cerrar sesión?",
+                "¿Estás segur@ de que quieres cerrar sesión?",
                 "Confirmar cierre de sesión",
                 JOptionPane.YES_NO_OPTION);
 
         if (respuesta == JOptionPane.YES_OPTION) {
+            // Limpiamos el estado de la sesión antes de volver al login
             AppState.getInstance().clearState();
             EventQueue.invokeLater(() -> {
                 new LoginView().setVisible(true);
@@ -240,19 +324,25 @@ public class MainView extends JFrame {
         }
     }
 
+    /**
+     * Gestiona el cierre de la aplicación.
+     *
+     * Muestra un diálogo de confirmación antes de salir. Si el usuario
+     * confirma, limpia la sesión, cierra la conexión a la base de datos
+     * y termina el proceso de la JVM.
+     */
     private void cierreExit() {
         int respuesta = JOptionPane.showConfirmDialog(this,
-        		"¿Estás segur@ de que quieres salir??",
+                "¿Estás segur@ de que quieres salir?",
                 "Confirmar salir",
                 JOptionPane.YES_NO_OPTION);
 
-        // Pinchar "No" o cerrar cuadro de diálogo mediante "X"
+        // Si el usuario pulsa "No" o cierra el diálogo con la X, cancelamos la salida
         if (respuesta == JOptionPane.NO_OPTION || respuesta == JOptionPane.CLOSED_OPTION) {
-            System.out.println("Salida cancelada");
             return;
         }
 
-        // Pinchar "Si"
+        // Si el usuario pulsa "Sí", limpiamos la sesión y cerramos la aplicación
         if (respuesta == JOptionPane.YES_OPTION) {
             AppState.getInstance().clearState();
             DatabaseConnection.closeConnection();
@@ -260,6 +350,11 @@ public class MainView extends JFrame {
         }
     }
 
+    /**
+     * Actualiza el mensaje de la barra de estado inferior.
+     *
+     * @param mensaje texto a mostrar en la barra de estado
+     */
     private void setStatusMessage(String mensaje) {
         statusLabel.setText(mensaje);
     }
