@@ -4,7 +4,6 @@ import controllers.ClienteController;
 import controllers.VentaController;
 import models.Cliente;
 import models.Venta;
-import state.AppState;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -13,14 +12,35 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.List;
 
+/**
+ * Panel de gestión de clientes.
+ *
+ * Muestra todos los clientes en una tabla con búsqueda por nombre o empresa.
+ * Permite añadir, editar y eliminar clientes mediante un botón y un menú
+ * contextual (clic derecho). Este panel solo es accesible para administradores.
+ *
+ * No se puede eliminar un cliente que tenga ventas asociadas, para mantener
+ * la integridad del historial de ventas.
+ *
+ * Extiende JPanel para poder incrustarse en el área de contenido de MainView.
+ */
 public class ClientesPanel extends JPanel {
+
+    // Controladores para acceder a la lógica de negocio
     private final ClienteController clienteController;
+    // VentaController se usa para verificar si el cliente tiene ventas antes de eliminarlo
     private final VentaController ventaController;
+    // Tabla que muestra el listado de clientes
     private final JTable clientesTable;
+    // Modelo de datos de la tabla (gestiona filas y columnas)
     private final DefaultTableModel tableModel;
+    // Campo de texto para filtrar clientes por nombre o empresa
     private final JTextField buscarField;
+    // Diálogo reutilizable para crear y editar clientes
     private JDialog clienteDialog;
+    // Cliente seleccionado en la tabla para editar o eliminar
     private Cliente clienteSeleccionado;
+    // Indica si el diálogo está en modo edición (true) o creación (false)
     private boolean isEditing = false;
 
     public ClientesPanel() {
@@ -29,12 +49,12 @@ public class ClientesPanel extends JPanel {
         setLayout(new BorderLayout(10, 10));
         setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // Panel superior con botón de buscar y agrega
+        // --- Panel superior: búsqueda y botón de añadir ---
         JPanel topPanel = new JPanel(new BorderLayout(5, 0));
 
-        // Panel de buscar
         JPanel buscarPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buscarField = new JTextField(20);
+        // Permitimos buscar pulsando Intro en el campo de búsqueda
         buscarField.addActionListener(e -> refreshTable(buscarField.getText()));
 
         JButton buscarButton = new JButton("Buscar");
@@ -44,14 +64,15 @@ public class ClientesPanel extends JPanel {
         buscarPanel.add(buscarField);
         buscarPanel.add(buscarButton);
 
-        // Añadir button
         JButton añadirButton = new JButton("Añadir nuevo cliente");
         añadirButton.addActionListener(e -> showClienteDialog(null));
 
         topPanel.add(buscarPanel, BorderLayout.WEST);
         topPanel.add(añadirButton, BorderLayout.EAST);
 
-        // Tabla
+        // --- Tabla de clientes ---
+        // isCellEditable devuelve false para que el usuario no pueda editar
+        // las celdas directamente; la edición se hace a través del diálogo
         String[] columns = {"ID", "Nombre", "Teléfono", "Email", "Empresa", "Dirección"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
@@ -61,7 +82,9 @@ public class ClientesPanel extends JPanel {
         };
 
         clientesTable = new JTable(tableModel);
+        // Solo permitimos seleccionar una fila a la vez
         clientesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Ajustamos el ancho preferido de cada columna
         clientesTable.getColumnModel().getColumn(0).setPreferredWidth(50);
         clientesTable.getColumnModel().getColumn(1).setPreferredWidth(150);
         clientesTable.getColumnModel().getColumn(2).setPreferredWidth(100);
@@ -69,7 +92,7 @@ public class ClientesPanel extends JPanel {
         clientesTable.getColumnModel().getColumn(4).setPreferredWidth(150);
         clientesTable.getColumnModel().getColumn(5).setPreferredWidth(200);
 
-        // Menú contextual
+        // --- Menú contextual con opciones sobre el cliente seleccionado ---
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem editarItem = new JMenuItem("Editar");
         JMenuItem borrarItem = new JMenuItem("Borrar");
@@ -83,39 +106,69 @@ public class ClientesPanel extends JPanel {
 
         popupMenu.add(editarItem);
         popupMenu.add(borrarItem);
+        // Separador visual entre opciones de gestión y opciones de ventas
         popupMenu.addSeparator();
         popupMenu.add(newVentaItem);
         popupMenu.add(viewVentasItem);
 
+        // Listener del ratón para mostrar el menú contextual al hacer clic derecho.
+        // Se comprueban tanto mousePressed como mouseReleased porque el evento
+        // de menú contextual varía según el sistema operativo (Windows vs Mac/Linux).
         clientesTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    mostrarMenuContextual(e);
+                }
+            }
+
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (e.isPopupTrigger()) {
-                    int row = clientesTable.rowAtPoint(e.getPoint());
-                    if (row >= 0 && row < clientesTable.getRowCount()) {
-                        clientesTable.setRowSelectionInterval(row, row);
-                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
-                    }
+                    mostrarMenuContextual(e);
+                }
+            }
+
+            private void mostrarMenuContextual(MouseEvent e) {
+                int row = clientesTable.rowAtPoint(e.getPoint());
+                if (row >= 0 && row < clientesTable.getRowCount()) {
+                    // Seleccionamos la fila sobre la que se hizo clic derecho
+                    clientesTable.setRowSelectionInterval(row, row);
+                    popupMenu.show(e.getComponent(), e.getX(), e.getY());
                 }
             }
         });
 
-        // Componentes panel principal
+        // --- Ensamblaje del panel principal ---
         add(topPanel, BorderLayout.NORTH);
+        // Envolvemos la tabla en un JScrollPane para que tenga barra de desplazamiento
         add(new JScrollPane(clientesTable), BorderLayout.CENTER);
 
-        // Carga inicial
+        // Cargamos todos los clientes al inicializar el panel
         refreshTable("");
     }
 
+    /**
+     * Actualiza el contenido de la tabla filtrando por el término de búsqueda.
+     *
+     * Carga todos los clientes de la base de datos y filtra en memoria
+     * los que contienen el término en el nombre o la empresa.
+     * Si el término está vacío, muestra todos los clientes.
+     *
+     * @param buscarTerm texto a buscar (puede estar vacío para mostrar todos)
+     */
     private void refreshTable(String buscarTerm) {
+        // Vaciamos la tabla antes de rellenarla con los nuevos datos
         tableModel.setRowCount(0);
         List<Cliente> clientes = clienteController.findAll();
 
         for (Cliente cliente : clientes) {
+            // Filtramos por nombre o empresa si hay término de búsqueda.
+            // Comprobamos null en empresa porque es un campo opcional.
             if (buscarTerm.isEmpty() ||
                     cliente.getNombre().toLowerCase().contains(buscarTerm.toLowerCase()) ||
-                    (cliente.getEmpresa() != null && cliente.getEmpresa().toLowerCase().contains(buscarTerm.toLowerCase()))) {
+                    (cliente.getEmpresa() != null &&
+                            cliente.getEmpresa().toLowerCase().contains(buscarTerm.toLowerCase()))) {
 
                 tableModel.addRow(new Object[]{
                         cliente.getIdCliente(),
@@ -129,22 +182,33 @@ public class ClientesPanel extends JPanel {
         }
     }
 
+    /**
+     * Muestra el diálogo de creación o edición de un cliente.
+     *
+     * Si se pasa un cliente existente, el diálogo se abre en modo edición
+     * con los campos pre-rellenados. Si se pasa null, se abre en modo creación.
+     * Los campos marcados con * son obligatorios (nombre y teléfono).
+     *
+     * @param cliente cliente a editar, o null para crear uno nuevo
+     */
     private void showClienteDialog(Cliente cliente) {
         isEditing = (cliente != null);
         clienteSeleccionado = cliente;
 
+        // Creamos un diálogo modal para que el usuario no pueda interactuar
+        // con la tabla mientras está editando un cliente
         clienteDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this),
                 isEditing ? "Editar cliente" : "Nuevo Cliente",
                 true);
         clienteDialog.setLayout(new BorderLayout(10, 10));
 
-        // Panel formulario
+        // --- Formulario del cliente ---
         JPanel formularioPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
 
-        // Campos formulario
+        // Campos del formulario
         JTextField nombreField = new JTextField(20);
         JTextField telefonoField = new JTextField(20);
         JTextField emailField = new JTextField(20);
@@ -152,7 +216,7 @@ public class ClientesPanel extends JPanel {
         JTextArea direccionArea = new JTextArea(3, 20);
         JScrollPane direccionScroll = new JScrollPane(direccionArea);
 
-        // Editar
+        // Si estamos editando, pre-rellenamos los campos con los datos actuales
         if (isEditing) {
             nombreField.setText(cliente.getNombre());
             telefonoField.setText(cliente.getTelefono());
@@ -161,14 +225,15 @@ public class ClientesPanel extends JPanel {
             direccionArea.setText(cliente.getDireccion());
         }
 
-        // Componentes formulario
+        // Añadimos los campos al formulario con su etiqueta correspondiente
+        // El asterisco (*) indica que el campo es obligatorio
         gbc.gridx = 0; gbc.gridy = 0;
         formularioPanel.add(new JLabel("Nombre:*"), gbc);
         gbc.gridx = 1;
         formularioPanel.add(nombreField, gbc);
 
         gbc.gridx = 0; gbc.gridy = 1;
-        formularioPanel.add(new JLabel("Telefono:*"), gbc);
+        formularioPanel.add(new JLabel("Teléfono:*"), gbc);
         gbc.gridx = 1;
         formularioPanel.add(telefonoField, gbc);
 
@@ -183,47 +248,48 @@ public class ClientesPanel extends JPanel {
         formularioPanel.add(empresaField, gbc);
 
         gbc.gridx = 0; gbc.gridy = 4;
-        formularioPanel.add(new JLabel("Direccion:"), gbc);
+        formularioPanel.add(new JLabel("Dirección:"), gbc);
         gbc.gridx = 1;
         formularioPanel.add(direccionScroll, gbc);
 
-        // NOta campos obligatorios
+        // Nota informativa sobre los campos obligatorios
         gbc.gridx = 0; gbc.gridy = 5;
         gbc.gridwidth = 2;
         formularioPanel.add(new JLabel("* Campos obligatorios"), gbc);
 
-        // Buttons panel guardar
+        // --- Botones del diálogo ---
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton guardarButton = new JButton("Guardar");
         JButton cancelarButton = new JButton("Cancelar");
 
         guardarButton.addActionListener(e -> {
             try {
-                // Validación entrada datos
+                // Recogemos los valores del formulario
                 String nombre = nombreField.getText().trim();
                 String telefono = telefonoField.getText().trim();
                 String email = emailField.getText().trim();
                 String empresa = empresaField.getText().trim();
                 String direccion = direccionArea.getText().trim();
 
+                // Validamos que los campos obligatorios estén rellenos
                 if (nombre.isEmpty() || telefono.isEmpty()) {
                     JOptionPane.showMessageDialog(clienteDialog,
-                    		"Por favor, complete todos los campos obligatorios",
-                            "Error de valicación",
+                            "Por favor, complete todos los campos obligatorios",
+                            "Error de validación",
                             JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
-                // Validación datos email
+                // Validamos el formato del email si se ha introducido uno
                 if (!email.isEmpty() && !email.matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
                     JOptionPane.showMessageDialog(clienteDialog,
                             "Por favor, introduce una dirección de correo electrónico válida",
-                            "Validation Error",
+                            "Error de validación",
                             JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
-                // Validación del formato del email
+                // Creamos o actualizamos el cliente según el modo del diálogo
                 Cliente clienteToSave = isEditing ? clienteSeleccionado : new Cliente();
                 clienteToSave.setNombre(nombre);
                 clienteToSave.setTelefono(telefono);
@@ -237,35 +303,42 @@ public class ClientesPanel extends JPanel {
                     clienteController.create(clienteToSave);
                 }
 
+                // Cerramos el diálogo y refrescamos la tabla
                 clienteDialog.dispose();
                 refreshTable(buscarField.getText());
 
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(clienteDialog,
-                		"Error guardando el cliente: " + ex.getMessage(),
+                        "Error guardando el cliente: " + ex.getMessage(),
                         "Error",
                         JOptionPane.ERROR_MESSAGE);
             }
         });
 
+        // El botón cancelar simplemente cierra el diálogo sin guardar cambios
         cancelarButton.addActionListener(e -> clienteDialog.dispose());
 
         buttonsPanel.add(guardarButton);
         buttonsPanel.add(cancelarButton);
 
-        // Agregar paneles al dialog
+        // Ensamblamos el diálogo
         clienteDialog.add(formularioPanel, BorderLayout.CENTER);
         clienteDialog.add(buttonsPanel, BorderLayout.SOUTH);
 
-        // Mostrar dialog
+        // pack() ajusta el tamaño del diálogo al contenido
         clienteDialog.pack();
         clienteDialog.setLocationRelativeTo(this);
         clienteDialog.setVisible(true);
     }
 
+    /**
+     * Abre el diálogo de edición con el cliente seleccionado en la tabla.
+     * Si no hay ninguna fila seleccionada, no hace nada.
+     */
     private void editClienteSeleccionado() {
         int filaSeleccionada = clientesTable.getSelectedRow();
         if (filaSeleccionada >= 0) {
+            // Obtenemos el ID del cliente de la primera columna de la fila seleccionada
             Integer clienteId = (Integer) tableModel.getValueAt(filaSeleccionada, 0);
             Cliente cliente = clienteController.findById(clienteId);
             if (cliente != null) {
@@ -274,21 +347,31 @@ public class ClientesPanel extends JPanel {
         }
     }
 
+    /**
+     * Elimina el cliente seleccionado en la tabla tras verificar que no tiene
+     * ventas asociadas y pedir confirmación al usuario.
+     *
+     * No se permite eliminar un cliente con historial de ventas para preservar
+     * la integridad de los datos históricos.
+     */
     private void deleteClienteSeleccionado() {
         int filaSeleccionada = clientesTable.getSelectedRow();
         if (filaSeleccionada >= 0) {
             Integer clienteId = (Integer) tableModel.getValueAt(filaSeleccionada, 0);
             String clienteNombre = (String) tableModel.getValueAt(filaSeleccionada, 1);
 
+            // Verificamos si el cliente tiene ventas antes de intentar eliminarlo.
+            // Si tiene ventas, mostramos un error y no permitimos la eliminación.
             List<Venta> ventasCliente = ventaController.findByClienteId(clienteId);
             if (!ventasCliente.isEmpty()) {
                 JOptionPane.showMessageDialog(this,
-                		"No se puede eliminar un cliente con un historial de ventas existente",
+                        "No se puede eliminar un cliente con un historial de ventas existente",
                         "Error de borrado",
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
+            // Pedimos confirmación antes de eliminar para evitar borrados accidentales
             int respuesta = JOptionPane.showConfirmDialog(this,
                     "¿Está seguro de que desea eliminar el cliente " + clienteNombre + "?",
                     "Confirmar eliminación",
@@ -298,10 +381,11 @@ public class ClientesPanel extends JPanel {
             if (respuesta == JOptionPane.YES_OPTION) {
                 try {
                     clienteController.delete(clienteId);
+                    // Refrescamos la tabla para reflejar el cambio
                     refreshTable(buscarField.getText());
                 } catch (Exception e) {
                     JOptionPane.showMessageDialog(this,
-                    		"Error al eliminar cliente: " + e.getMessage(),
+                            "Error al eliminar cliente: " + e.getMessage(),
                             "Error",
                             JOptionPane.ERROR_MESSAGE);
                 }
@@ -309,31 +393,36 @@ public class ClientesPanel extends JPanel {
         }
     }
 
+    /**
+     * Muestra el historial de ventas del cliente seleccionado.
+     *
+     * Funcionalidad pendiente de implementar: actualmente muestra un mensaje
+     * informativo. En una versión futura abrirá el panel de historial de ventas
+     * filtrado por este cliente.
+     */
     private void viewVentasCliente() {
-        int filasSeleccionadas = clientesTable.getSelectedRow();
-        if (filasSeleccionadas >= 0) {
-            Integer clienteId = (Integer) tableModel.getValueAt(filasSeleccionadas, 0);
-            String clienteNombre = (String) tableModel.getValueAt(filasSeleccionadas, 1);
-
-            // Mostrar el historial de ventas del cliente
-            // Esto se implementará cuando se cree el panel del historial de ventas en un futuro
+        int filaSeleccionada = clientesTable.getSelectedRow();
+        if (filaSeleccionada >= 0) {
             JOptionPane.showMessageDialog(this,
-            		"La función de historial de ventas estará disponible pronto",
-                    "Llegará pronto",
+                    "La función de historial de ventas estará disponible pronto",
+                    "Próximamente",
                     JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
+    /**
+     * Abre el formulario de nueva venta con el cliente seleccionado pre-cargado.
+     *
+     * Funcionalidad pendiente de implementar: actualmente muestra un mensaje
+     * informativo. En una versión futura abrirá el panel de nueva venta
+     * con este cliente ya seleccionado.
+     */
     private void createNuevaVenta() {
-        int filasSeleccionadas = clientesTable.getSelectedRow();
-        if (filasSeleccionadas >= 0) {
-            Integer clienteId = (Integer) tableModel.getValueAt(filasSeleccionadas, 0);
-
-            // Abrir nuevo panel/diálogo de venta para este cliente
-            // Esto se implementará cuando creemos el panel de nueva venta
+        int filaSeleccionada = clientesTable.getSelectedRow();
+        if (filaSeleccionada >= 0) {
             JOptionPane.showMessageDialog(this,
-            		"La nueva función de venta estará disponible pronto.",
-                    "Llegará pronto",
+                    "La nueva función de venta estará disponible pronto.",
+                    "Próximamente",
                     JOptionPane.INFORMATION_MESSAGE);
         }
     }
