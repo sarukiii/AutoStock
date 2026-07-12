@@ -10,15 +10,33 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * Panel que muestra el historial completo de ventas realizadas.
+ *
+ * Muestra todas las ventas en una tabla con búsqueda por nombre de cliente
+ * o usuario. Al hacer doble clic sobre una venta (o desde el menú contextual)
+ * se abre un diálogo con el detalle completo de la venta: productos, cantidades,
+ * precios unitarios, subtotales y total.
+ *
+ * También permite eliminar ventas, lo que restaura automáticamente el stock
+ * de los productos vendidos (gestionado por VentaController).
+ *
+ * Extiende JPanel para poder incrustarse en el área de contenido de MainView.
+ */
 public class HistorialVentasPanel extends JPanel {
+
+    // Controlador para acceder a la lógica de negocio de ventas
     private final VentaController ventaController;
+    // Tabla que muestra el listado de ventas
     private final JTable ventasTable;
+    // Modelo de datos de la tabla (gestiona filas y columnas)
     private final DefaultTableModel tableModel;
+    // Campo de texto para filtrar ventas por cliente o usuario
     private final JTextField busquedaField;
+    // Formato de fecha y hora para mostrar en la tabla
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     public HistorialVentasPanel() {
@@ -26,9 +44,10 @@ public class HistorialVentasPanel extends JPanel {
         setLayout(new BorderLayout(10, 10));
         setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // Crea el panel superior con búsqueda y filtros
+        // --- Panel superior: búsqueda ---
         JPanel topPanel = new JPanel(new BorderLayout(5, 0));
         busquedaField = new JTextField(20);
+        // Permitimos buscar pulsando Intro en el campo de búsqueda
         busquedaField.addActionListener(e -> actualizarTable(busquedaField.getText()));
 
         JButton buscarButton = new JButton("Buscar");
@@ -39,14 +58,15 @@ public class HistorialVentasPanel extends JPanel {
         buscarPanel.add(busquedaField);
         buscarPanel.add(buscarButton);
 
-        // Filtros de rango de fechas
+        // Panel reservado para futuros filtros de rango de fechas
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        // En este punto se podrían agregar selectores de fechas
 
         topPanel.add(buscarPanel, BorderLayout.WEST);
         topPanel.add(filterPanel, BorderLayout.EAST);
 
-        // Tabla
+        // --- Tabla de ventas ---
+        // isCellEditable devuelve false para que el usuario no pueda editar
+        // las celdas directamente
         String[] columnas = {"ID", "Fecha", "Cliente", "Usuario", "Total", "Items"};
         tableModel = new DefaultTableModel(columnas, 0) {
             @Override
@@ -56,7 +76,9 @@ public class HistorialVentasPanel extends JPanel {
         };
 
         ventasTable = new JTable(tableModel);
+        // Solo permitimos seleccionar una fila a la vez
         ventasTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Ajustamos el ancho preferido de cada columna
         ventasTable.getColumnModel().getColumn(0).setPreferredWidth(50);
         ventasTable.getColumnModel().getColumn(1).setPreferredWidth(150);
         ventasTable.getColumnModel().getColumn(2).setPreferredWidth(200);
@@ -64,7 +86,7 @@ public class HistorialVentasPanel extends JPanel {
         ventasTable.getColumnModel().getColumn(4).setPreferredWidth(100);
         ventasTable.getColumnModel().getColumn(5).setPreferredWidth(80);
 
-        // Listener de doble clic para obtener más detalles
+        // Doble clic sobre una fila abre el diálogo de detalles de la venta
         ventasTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -74,7 +96,7 @@ public class HistorialVentasPanel extends JPanel {
             }
         });
 
-        // Menú contextual
+        // --- Menú contextual con opciones sobre la venta seleccionada ---
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem viewDetallesItem = new JMenuItem("Ver detalles");
         JMenuItem deleteItem = new JMenuItem("Borrar");
@@ -85,52 +107,88 @@ public class HistorialVentasPanel extends JPanel {
         popupMenu.add(viewDetallesItem);
         popupMenu.add(deleteItem);
 
+        // Listener del ratón para mostrar el menú contextual al hacer clic derecho.
+        // Se comprueban tanto mousePressed como mouseReleased porque el evento
+        // de menú contextual varía según el sistema operativo (Windows vs Mac/Linux).
         ventasTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    mostrarMenuContextual(e);
+                }
+            }
+
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (e.isPopupTrigger()) {
-                    int row = ventasTable.rowAtPoint(e.getPoint());
-                    if (row >= 0 && row < ventasTable.getRowCount()) {
-                        ventasTable.setRowSelectionInterval(row, row);
-                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
-                    }
+                    mostrarMenuContextual(e);
+                }
+            }
+
+            private void mostrarMenuContextual(MouseEvent e) {
+                int row = ventasTable.rowAtPoint(e.getPoint());
+                if (row >= 0 && row < ventasTable.getRowCount()) {
+                    // Seleccionamos la fila sobre la que se hizo clic derecho
+                    ventasTable.setRowSelectionInterval(row, row);
+                    popupMenu.show(e.getComponent(), e.getX(), e.getY());
                 }
             }
         });
 
-        // Componentes del panel principal
+        // --- Ensamblaje del panel principal ---
         add(topPanel, BorderLayout.NORTH);
+        // Envolvemos la tabla en un JScrollPane para que tenga barra de desplazamiento
         add(new JScrollPane(ventasTable), BorderLayout.CENTER);
 
-        // Carga inicial de datos
+        // Cargamos todas las ventas al inicializar el panel
         actualizarTable("");
     }
 
+    /**
+     * Actualiza el contenido de la tabla filtrando por el término de búsqueda.
+     *
+     * Carga todas las ventas de la base de datos y filtra en memoria
+     * las que contienen el término en el nombre del cliente o del usuario.
+     * Si el término está vacío, muestra todas las ventas.
+     *
+     * @param busquedaTerm texto a buscar (puede estar vacío para mostrar todas)
+     */
     private void actualizarTable(String busquedaTerm) {
+        // Vaciamos la tabla antes de rellenarla con los nuevos datos
         tableModel.setRowCount(0);
         List<Venta> ventas = ventaController.findAll();
 
         for (Venta venta : ventas) {
             String clienteNombre = venta.getCliente().getNombre().toLowerCase();
             String usuarioNombre = venta.getUsuario().getNombre().toLowerCase();
-            busquedaTerm = busquedaTerm.toLowerCase();
+            String termino = busquedaTerm.toLowerCase();
 
-            if (busquedaTerm.isEmpty() ||
-                    clienteNombre.contains(busquedaTerm) ||
-                    usuarioNombre.contains(busquedaTerm)) {
+            // Filtramos por nombre de cliente o de usuario
+            if (termino.isEmpty() ||
+                    clienteNombre.contains(termino) ||
+                    usuarioNombre.contains(termino)) {
 
                 tableModel.addRow(new Object[]{
                         venta.getIdVenta(),
+                        // Formateamos la fecha para que sea legible en la tabla
                         formatter.format(venta.getFecha()),
                         venta.getCliente().getNombre(),
                         venta.getUsuario().getNombre(),
                         String.format("€%.2f", venta.getTotal()),
+                        // Mostramos el número de líneas de detalle de la venta
                         venta.getDetalles().size()
                 });
             }
         }
     }
 
+    /**
+     * Muestra el diálogo de detalles de la venta seleccionada en la tabla.
+     *
+     * El diálogo muestra la información general de la venta (ID, fecha, cliente,
+     * usuario) y una tabla con todas las líneas de detalle (producto, cantidad,
+     * precio unitario, subtotal) y el total de la venta.
+     */
     private void showDetalleVenta() {
         int filaSeleccionada = ventasTable.getSelectedRow();
         if (filaSeleccionada >= 0) {
@@ -138,17 +196,17 @@ public class HistorialVentasPanel extends JPanel {
             Venta venta = ventaController.findById(ventaId);
 
             if (venta != null) {
+                // Creamos un diálogo modal para mostrar los detalles
                 JDialog detallesDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this),
-                        "Detalles venta", true);
+                        "Detalles de la venta", true);
                 detallesDialog.setLayout(new BorderLayout(10, 10));
 
-                // Panel de detalles
+                // --- Panel con información general de la venta ---
                 JPanel detallesPanel = new JPanel(new GridBagLayout());
                 GridBagConstraints gbc = new GridBagConstraints();
                 gbc.fill = GridBagConstraints.HORIZONTAL;
                 gbc.insets = new Insets(5, 5, 5, 5);
 
-                // Información de la venta
                 gbc.gridx = 0; gbc.gridy = 0;
                 detallesPanel.add(new JLabel("ID venta:"), gbc);
                 gbc.gridx = 1;
@@ -169,7 +227,7 @@ public class HistorialVentasPanel extends JPanel {
                 gbc.gridx = 1;
                 detallesPanel.add(new JLabel(venta.getUsuario().getNombre()), gbc);
 
-                // Items tabla
+                // --- Tabla con las líneas de detalle de la venta ---
                 String[] columns = {"Producto", "Cantidad", "Precio/unidad", "Subtotal"};
                 DefaultTableModel itemsModel = new DefaultTableModel(columns, 0) {
                     @Override
@@ -179,6 +237,7 @@ public class HistorialVentasPanel extends JPanel {
                 };
 
                 for (DetalleVenta detalle : venta.getDetalles()) {
+                    // Calculamos el subtotal de cada línea para mostrarlo en la tabla
                     BigDecimal subtotal = detalle.getPrecioUnitario()
                             .multiply(BigDecimal.valueOf(detalle.getCantidad()));
 
@@ -194,14 +253,15 @@ public class HistorialVentasPanel extends JPanel {
                 JScrollPane scrollPane = new JScrollPane(itemsTable);
                 scrollPane.setPreferredSize(new Dimension(500, 200));
 
-                // Panel importe total
+                // --- Panel con el total de la venta ---
                 JPanel totalPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
                 totalPanel.add(new JLabel("Total: "));
                 JLabel totalLabel = new JLabel(String.format("€%.2f", venta.getTotal()));
+                // Mostramos el total en negrita para destacarlo
                 totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD));
                 totalPanel.add(totalLabel);
 
-                // Componetes cuadro de diálogo
+                // Ensamblamos el diálogo
                 detallesDialog.add(detallesPanel, BorderLayout.NORTH);
                 detallesDialog.add(scrollPane, BorderLayout.CENTER);
                 detallesDialog.add(totalPanel, BorderLayout.SOUTH);
@@ -213,21 +273,30 @@ public class HistorialVentasPanel extends JPanel {
         }
     }
 
+    /**
+     * Elimina la venta seleccionada en la tabla tras pedir confirmación.
+     *
+     * Al eliminar una venta, VentaController restaura automáticamente el stock
+     * de todos los productos incluidos en ella, manteniendo la integridad
+     * del inventario.
+     */
     private void deleteVentaSeleccionada() {
-        int selectedRow = ventasTable.getSelectedRow();
-        if (selectedRow >= 0) {
-            Integer ventaId = (Integer) tableModel.getValueAt(selectedRow, 0);
-            String ventaDate = (String) tableModel.getValueAt(selectedRow, 1);
+        int filaSeleccionada = ventasTable.getSelectedRow();
+        if (filaSeleccionada >= 0) {
+            Integer ventaId = (Integer) tableModel.getValueAt(filaSeleccionada, 0);
+            String ventaFecha = (String) tableModel.getValueAt(filaSeleccionada, 1);
 
-            int response = JOptionPane.showConfirmDialog(this,
-                    "¿Está seguro de que desea eliminar la venta de " + ventaDate + "?",
+            // Pedimos confirmación antes de eliminar para evitar borrados accidentales
+            int respuesta = JOptionPane.showConfirmDialog(this,
+                    "¿Está seguro de que desea eliminar la venta de " + ventaFecha + "?",
                     "Confirmar borrado",
                     JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE);
 
-            if (response == JOptionPane.YES_OPTION) {
+            if (respuesta == JOptionPane.YES_OPTION) {
                 try {
                     ventaController.delete(ventaId);
+                    // Refrescamos la tabla para reflejar el cambio
                     actualizarTable(busquedaField.getText());
                 } catch (Exception e) {
                     JOptionPane.showMessageDialog(this,
