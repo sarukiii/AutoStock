@@ -2,12 +2,10 @@ package controllers;
 
 import models.Usuario;
 import models.Rol;
+import org.mindrot.jbcrypt.BCrypt;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 import java.util.logging.Level;
 import java.time.LocalDateTime;
 
@@ -17,7 +15,14 @@ import java.time.LocalDateTime;
  *
  * Además del CRUD básico, gestiona la autenticación (login) y el
  * restablecimiento de contraseñas. Las contraseñas nunca se almacenan
- * en texto plano: se aplica un hash SHA-256 antes de guardarlas.
+ * en texto plano: se aplica BCrypt antes de guardarlas.
+ *
+ * BCrypt es el estándar actual para el hash de contraseñas porque:
+ * - Incorpora un salt aleatorio automáticamente en cada hash.
+ * - Es resistente a ataques de fuerza bruta por su coste computacional
+ * configurable.
+ * - A diferencia de SHA-256, dos hashes del mismo texto plano son siempre
+ * diferentes.
  *
  * Hereda de BaseController para reutilizar la lógica de conexión
  * y el logger compartido.
@@ -27,9 +32,9 @@ public class UsuarioController extends BaseController {
     /**
      * Verifica las credenciales del usuario e inicia sesión si son correctas.
      *
-     * Hashea la contraseña recibida y la compara con la almacenada en la base
-     * de datos. Si coinciden, registra la fecha y hora del último acceso y
-     * devuelve el objeto Usuario con su rol cargado.
+     * Buscamos el usuario solo por email y luego verificamos la contraseña
+     * en Java con BCrypt. No comparamos el hash en SQL porque BCrypt genera
+     * un salt diferente en cada hash y la comparación directa no funciona.
      *
      * @param email    correo electrónico introducido en el formulario de login
      * @param password contraseña en texto plano introducida en el formulario
@@ -39,21 +44,25 @@ public class UsuarioController extends BaseController {
      */
     public Usuario login(String email, String password) {
 
-        // JOIN con Rol para obtener los datos del rol del usuario en una sola consulta
         String sql = "SELECT u.*, r.nombre as rol_nombre, r.descripcion as rol_descripcion " +
                 "FROM Usuario u " +
                 "JOIN Rol r ON u.id_rol = r.id_rol " +
-                "WHERE u.email = ? AND u.contrasena = ?";
+                "WHERE u.email = ?";
 
         try (Connection conn = getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             stmt.setString(1, email);
-            // Hasheamos la contraseña antes de compararla con la almacenada en BD
-            stmt.setString(2, hashPassword(password));
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
+                    String hashAlmacenado = rs.getString("contrasena");
+
+                    // Verificamos la contraseña con BCrypt
+                    if (!verificarPassword(password, hashAlmacenado)) {
+                        return null;
+                    }
+
                     // Credenciales correctas: registramos la fecha y hora del acceso
                     String updateLoginSql = "UPDATE Usuario SET last_login = ? WHERE id_usuario = ?";
                     try (PreparedStatement updateLoginStmt = conn.prepareStatement(updateLoginSql)) {
@@ -63,8 +72,6 @@ public class UsuarioController extends BaseController {
                     }
                     return mapUsuarioFromResultSet(rs);
                 }
-                // Credenciales incorrectas: devolvemos null para que la vista
-                // muestre el mensaje de error correspondiente
                 return null;
             }
 
@@ -77,9 +84,7 @@ public class UsuarioController extends BaseController {
     /**
      * Inserta un nuevo usuario en la base de datos.
      *
-     * La contraseña se hashea antes de almacenarla. Tras la inserción,
-     * recupera el ID generado automáticamente por MySQL y lo asigna
-     * al objeto usuario.
+     * La contraseña se hashea con BCrypt antes de almacenarla.
      *
      * @param usuario objeto con los datos del usuario a crear
      * @return el mismo objeto usuario con el ID asignado
@@ -94,10 +99,8 @@ public class UsuarioController extends BaseController {
 
             stmt.setString(1, usuario.getNombre());
             stmt.setString(2, usuario.getEmail());
-            // Hasheamos la contraseña antes de guardarla en la base de datos
             stmt.setString(3, hashPassword(usuario.getPassword()));
             stmt.setInt(4, usuario.getRol().getIdRol());
-            // last_login puede ser null si es un usuario recién creado
             stmt.setTimestamp(5, usuario.getLastLogin() != null ? Timestamp.valueOf(usuario.getLastLogin()) : null);
 
             int filasModificadas = stmt.executeUpdate();
@@ -106,7 +109,6 @@ public class UsuarioController extends BaseController {
                 throw new SQLException("Error al crear el usuario: sin filas afectadas.");
             }
 
-            // Recuperamos el ID generado por MySQL tras la inserción
             try (ResultSet rs = stmt.getGeneratedKeys()) {
                 if (rs.next()) {
                     usuario.setIdUsuario(rs.getInt(1));
@@ -125,13 +127,8 @@ public class UsuarioController extends BaseController {
     /**
      * Actualiza los datos de un usuario existente en la base de datos.
      *
-     * Si el campo password del objeto usuario no está vacío, también
-     * actualiza la contraseña (hasheándola antes de guardarla). Si está
-     * vacío, la contraseña actual se mantiene sin cambios.
-     *
-     * Este comportamiento se implementa construyendo la query dinámicamente
-     * según si hay nueva contraseña o no, usando un índice de parámetros
-     * variable para asignar correctamente cada valor.
+     * Si el campo password no está vacío, también actualiza la contraseña
+     * hasheándola con BCrypt antes de guardarla.
      *
      * @param usuario objeto con los datos actualizados (debe tener ID válido)
      * @return el mismo objeto usuario con los datos actualizados
@@ -139,9 +136,6 @@ public class UsuarioController extends BaseController {
      */
     public Usuario update(Usuario usuario) {
 
-        // Construimos la query según si se quiere actualizar la contraseña o no.
-        // Esto evita sobreescribir la contraseña existente cuando no se proporciona una
-        // nueva.
         String sql;
         boolean actualizarPassword = usuario.getPassword() != null && !usuario.getPassword().isEmpty();
 
@@ -157,8 +151,6 @@ public class UsuarioController extends BaseController {
             stmt.setString(1, usuario.getNombre());
             stmt.setString(2, usuario.getEmail());
 
-            // Usamos un índice variable para asignar los parámetros correctamente
-            // dependiendo de si incluimos o no la contraseña en la query
             int indice = 3;
             if (actualizarPassword) {
                 stmt.setString(indice++, hashPassword(usuario.getPassword()));
@@ -167,7 +159,6 @@ public class UsuarioController extends BaseController {
             stmt.setInt(indice++, usuario.getRol().getIdRol());
             stmt.setTimestamp(indice++,
                     usuario.getLastLogin() != null ? Timestamp.valueOf(usuario.getLastLogin()) : null);
-            // El ID va al final para que coincida con el WHERE de la query
             stmt.setInt(indice, usuario.getIdUsuario());
 
             int filasModificadas = stmt.executeUpdate();
@@ -214,9 +205,6 @@ public class UsuarioController extends BaseController {
     /**
      * Busca y devuelve un usuario por su ID.
      *
-     * Hace un JOIN con Rol para devolver el usuario con su rol ya cargado,
-     * evitando una segunda consulta.
-     *
      * @param id identificador del usuario a buscar
      * @return el usuario encontrado con su rol, o null si no existe
      * @throws RuntimeException si ocurre un error en la base de datos
@@ -237,8 +225,6 @@ public class UsuarioController extends BaseController {
                 if (rs.next()) {
                     return mapUsuarioFromResultSet(rs);
                 }
-                // Devolvemos null para que el llamante decida cómo manejar
-                // la ausencia del usuario
                 return null;
             }
 
@@ -250,8 +236,6 @@ public class UsuarioController extends BaseController {
 
     /**
      * Devuelve la lista completa de usuarios registrados en el sistema.
-     *
-     * Incluye el rol de cada usuario mediante JOIN.
      *
      * @return lista de usuarios (vacía si no hay ninguno)
      * @throws RuntimeException si ocurre un error en la base de datos
@@ -281,10 +265,7 @@ public class UsuarioController extends BaseController {
     }
 
     /**
-     * Restablece la contraseña de un usuario.
-     *
-     * La nueva contraseña se hashea antes de almacenarla, igual que
-     * en el proceso de creación de usuario.
+     * Restablece la contraseña de un usuario hasheándola con BCrypt.
      *
      * @param usuarioId     identificador del usuario
      * @param nuevoPassword nueva contraseña en texto plano
@@ -297,7 +278,6 @@ public class UsuarioController extends BaseController {
         try (Connection conn = getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            // Hasheamos la nueva contraseña antes de guardarla
             stmt.setString(1, hashPassword(nuevoPassword));
             stmt.setInt(2, usuarioId);
 
@@ -316,9 +296,6 @@ public class UsuarioController extends BaseController {
     /**
      * Convierte una fila del ResultSet en un objeto Usuario con su Rol.
      *
-     * Centraliza el mapeo de columnas de la base de datos a atributos
-     * del modelo. Incluye el rol del usuario obtenido mediante JOIN.
-     *
      * @param rs ResultSet posicionado en la fila a mapear
      * @return objeto Usuario con todos sus datos y el rol asociado
      * @throws SQLException si alguna columna no existe o hay error de lectura
@@ -329,13 +306,11 @@ public class UsuarioController extends BaseController {
         usuario.setNombre(rs.getString("nombre"));
         usuario.setEmail(rs.getString("email"));
 
-        // last_login puede ser null si el usuario nunca ha iniciado sesión
         Timestamp lastLogin = rs.getTimestamp("last_login");
         if (lastLogin != null) {
             usuario.setLastLogin(lastLogin.toLocalDateTime());
         }
 
-        // Construimos el objeto Rol con los datos obtenidos del JOIN
         Rol rol = new Rol();
         rol.setIdRol(rs.getInt("id_rol"));
         rol.setNombre(rs.getString("rol_nombre"));
@@ -346,29 +321,35 @@ public class UsuarioController extends BaseController {
     }
 
     /**
-     * Genera el hash SHA-256 de una contraseña en texto plano.
+     * Genera el hash BCrypt de una contraseña en texto plano.
      *
-     * Se usa para almacenar y comparar contraseñas de forma segura,
-     * evitando guardarlas en texto plano en la base de datos.
+     * BCrypt incorpora un salt aleatorio automáticamente en cada llamada,
+     * lo que significa que el mismo texto plano produce hashes diferentes
+     * en cada ejecución. Esto protege contra ataques de diccionario y
+     * tablas rainbow, a diferencia de SHA-256 sin salt.
      *
-     * NOTA: SHA-256 sin salt es vulnerable a ataques de diccionario y
-     * tablas rainbow. Una mejora futura sería sustituirlo por BCrypt,
-     * que incorpora salt automáticamente y es el estándar actual para
-     * el hashing de contraseñas.
+     * El factor de coste (10) determina cuánto tiempo tarda el hash:
+     * más alto = más seguro pero más lento. 10 es el valor estándar recomendado.
      *
      * @param password contraseña en texto plano
-     * @return hash SHA-256 de la contraseña en formato Base64
-     * @throws RuntimeException si el algoritmo SHA-256 no está disponible
+     * @return hash BCrypt de la contraseña
      */
     private String hashPassword(String password) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(password.getBytes());
-            // Convertimos el array de bytes a Base64 para almacenarlo como texto en BD
-            return Base64.getEncoder().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            LOGGER.log(Level.SEVERE, "Error al generar el hash de la contraseña", e);
-            throw new RuntimeException("Error al generar el hash de la contraseña", e);
-        }
+        return BCrypt.hashpw(password, BCrypt.gensalt(10));
+    }
+
+    /**
+     * Verifica si una contraseña en texto plano coincide con un hash BCrypt.
+     *
+     * No podemos comparar hashes directamente porque BCrypt genera un salt
+     * diferente cada vez. BCrypt.checkpw extrae el salt del hash almacenado
+     * y verifica la contraseña correctamente.
+     *
+     * @param password       contraseña en texto plano introducida por el usuario
+     * @param hashedPassword hash BCrypt almacenado en la base de datos
+     * @return true si la contraseña es correcta, false en caso contrario
+     */
+    private boolean verificarPassword(String password, String hashedPassword) {
+        return BCrypt.checkpw(password, hashedPassword);
     }
 }
