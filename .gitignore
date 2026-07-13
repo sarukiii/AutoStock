@@ -16,3 +16,6 @@ mysql-connector-j-9.1.0.jar
 
 # Credenciales de base de datos
 src/config/db.properties
+
+# Librerías (descargar manualmente, ver README)
+lib/
