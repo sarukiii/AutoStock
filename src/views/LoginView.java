@@ -8,6 +8,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import com.formdev.flatlaf.FlatDarkLaf;
 
 /**
  * Vista del formulario de inicio de sesión.
@@ -212,15 +213,16 @@ public class LoginView extends JFrame {
      * Método main alternativo para lanzar la aplicación directamente desde esta
      * clase.
      *
-     * Aplica el Look and Feel del sistema operativo para que la interfaz
-     * tenga el aspecto nativo de Windows, Mac o Linux.
+     * Aplica FlatDarkLaf como Look and Feel antes de crear la ventana de login.
+     * Este método es redundante si se lanza desde Main.java, pero se mantiene
+     * para poder ejecutar LoginView de forma independiente durante el desarrollo.
      *
      * @param args argumentos de línea de comandos (no se utilizan)
      */
     public static void main(String[] args) {
+        // Aplicamos el tema oscuro FlatDarkLaf antes de crear la ventana
         try {
-            // Look and Feel nativo del sistema operativo
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            UIManager.setLookAndFeel(new FlatDarkLaf());
         } catch (Exception e) {
             e.printStackTrace();
         }
