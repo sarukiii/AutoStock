@@ -1,3 +1,5 @@
+![AutoStock Logo](assets/logo-dark.png)
+
 # AutoStock — Sistema de Gestión de Inventarios
 
 Aplicación de escritorio desarrollada en Java como Trabajo de Fin de Grado del ciclo formativo **DAM (Desarrollo de Aplicaciones Multiplataforma)**. AutoStock permite a pequeños y medianos negocios gestionar su inventario, ventas, clientes y proveedores desde una interfaz de escritorio intuitiva.
