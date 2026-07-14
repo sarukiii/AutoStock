@@ -12,7 +12,7 @@ Aplicación de escritorio desarrollada en Java como Trabajo de Fin de Grado del 
 - **Historial de ventas**: consulta del historial completo de transacciones.
 - **Gestión de clientes y proveedores**: CRUD completo, accesible solo para administradores.
 - **Gestión de usuarios**: el administrador puede crear, editar y eliminar usuarios del sistema.
-- **Informes**: panel de informes con resumen de ventas por producto, accesible solo para administradores.
+- **Informes**: panel de informes con resumen de ventas por producto, accesible solo para administradores. Exportación a CSV incluida.
 
 ---
 
@@ -24,6 +24,7 @@ Aplicación de escritorio desarrollada en Java como Trabajo de Fin de Grado del 
 | Java Swing | — | Interfaz gráfica de escritorio |
 | MySQL | 8.0 | Base de datos relacional |
 | MySQL Connector/J | 9.1.0 | Driver JDBC para conexión a MySQL |
+| jBCrypt | 0.4 | Hash seguro de contraseñas |
 
 ---
 
@@ -42,16 +43,16 @@ src/
 └── Main.java       # Punto de entrada de la aplicación
 database/
 └── init.sql        # Script de inicialización de la base de datos
-lib/
-└── mysql-connector-j-9.1.0.jar
+lib/                # Librerías externas (descargar manualmente, ver instrucciones)
 ```
 
 Aspectos técnicos destacables:
 - Uso de **PreparedStatement** en todas las consultas SQL (prevención de SQL injection).
-- **Hashing de contraseñas** con SHA-256 antes de almacenarlas.
+- **Hash de contraseñas con BCrypt** (con salt automático), el estándar actual para almacenamiento seguro de contraseñas.
 - Manejo de excepciones con excepciones personalizadas (`DatabaseException`) y logging con `java.util.logging`.
-- Cierre correcto de recursos JDBC en bloques `finally`.
+- Cierre correcto de recursos JDBC mediante **try-with-resources**.
 - Control de acceso por rol implementado tanto en la capa de vista como en la lógica de negocio.
+- Credenciales de base de datos externalizadas en `db.properties` (no incluido en el repositorio).
 
 ---
 
@@ -68,11 +69,25 @@ Aspectos técnicos destacables:
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/autostock.git
-cd autostock
+git clone https://github.com/sarukiii/AutoStock.git
+cd AutoStock
 ```
 
-### 2. Crear la base de datos
+### 2. Descargar las librerías necesarias
+
+Las librerías externas no están incluidas en el repositorio. Descárgalas y colócalas en la carpeta `lib/`:
+
+**MySQL Connector/J 9.1.0:**
+```bash
+curl -o lib/mysql-connector-j-9.1.0.jar https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/9.1.0/mysql-connector-j-9.1.0.jar
+```
+
+**jBCrypt 0.4:**
+```bash
+curl -o lib/jbcrypt-0.4.jar https://repo1.maven.org/maven2/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar
+```
+
+### 3. Crear la base de datos
 
 Conéctate a tu instancia de MySQL y ejecuta el script de inicialización:
 
@@ -82,34 +97,33 @@ mysql -u root -p < database/init.sql
 
 O desde MySQL Workbench: abre el archivo `database/init.sql` y ejecútalo.
 
-### 3. Configurar la conexión a la base de datos
+### 4. Configurar la conexión a la base de datos
 
-Abre el archivo `src/config/DatabaseConnection.java` y ajusta las credenciales a tu entorno local:
-
-```java
-private static final String URL = "jdbc:mysql://localhost:3306/autostock_inventory";
-private static final String USER = "root";
-private static final String PASSWORD = "tu_contraseña";
-```
-
-### 4. Añadir el driver de MySQL al classpath
-
-En VS Code, en el panel **Java Projects → Referenced Libraries**, añade el archivo:
-
-```
-lib/mysql-connector-j-9.1.0.jar
-```
-
-### 5. Ejecutar la aplicación
-
-Abre `src/Main.java` y haz clic en **Run** (▶), o desde la terminal:
+Copia el archivo de ejemplo y ajusta las credenciales a tu entorno local:
 
 ```bash
-javac -cp lib/mysql-connector-j-9.1.0.jar -d bin src/**/*.java src/Main.java
-java -cp bin:lib/mysql-connector-j-9.1.0.jar Main
+cp src/config/db.properties.example src/config/db.properties
 ```
 
-### 6. Crear el primer usuario administrador
+Edita `src/config/db.properties`:
+
+```properties
+db.url=jdbc:mysql://localhost:3306/autostock_inventory
+db.user=root
+db.password=tu_contraseña
+```
+
+### 5. Añadir las librerías al classpath
+
+En VS Code, en el panel **Java Projects → Referenced Libraries**, añade los dos archivos de la carpeta `lib/`:
+- `lib/mysql-connector-j-9.1.0.jar`
+- `lib/jbcrypt-0.4.jar`
+
+### 6. Ejecutar la aplicación
+
+Abre `src/Main.java` y haz clic en **Run** (▶).
+
+### 7. Crear el primer usuario administrador
 
 Al arrancar la aplicación por primera vez, usa la opción **Registro** para crear tu usuario. Luego, desde MySQL, asígnale el rol de administrador:
 
@@ -131,14 +145,13 @@ Los roles disponibles son:
 
 ## Posibles mejoras futuras
 
-- Migrar las credenciales de base de datos a un archivo `.properties` externo.
-- Sustituir SHA-256 sin salt por BCrypt para el hashing de contraseñas.
 - Exportación de informes a PDF o Excel.
 - Empaquetado como `.jar` ejecutable o instalador nativo con jpackage.
+- Completar las funcionalidades pendientes en el panel de clientes (historial de ventas y nueva venta desde el panel).
 
 ---
 
 ## Autor
 
 **Sara** — DAM, promoción 2024  
-[LinkedIn](#) · [GitHub](#)
+[LinkedIn](#) · [GitHub](https://github.com/sarukiii)
