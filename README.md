@@ -19,7 +19,7 @@ Aplicación de escritorio desarrollada en Java como Trabajo de Fin de Grado del 
 ## Tecnologías utilizadas
 
 | Tecnología | Versión | Uso |
-|---|---|---|
+| --- | --- | --- |
 | Java | 23 | Lenguaje principal |
 | Java Swing | — | Interfaz gráfica de escritorio |
 | MySQL | 8.0 | Base de datos relacional |
@@ -32,9 +32,11 @@ Aplicación de escritorio desarrollada en Java como Trabajo de Fin de Grado del 
 
 El proyecto sigue el patrón **MVC (Modelo-Vista-Controlador)**:
 
-```
+```text
 src/
-├── config/         # Conexión a la base de datos y excepciones personalizadas
+├── config/
+...
+```         # Conexión a la base de datos y excepciones personalizadas
 ├── controllers/    # Lógica de negocio (Cliente, Producto, Proveedor, Usuario, Venta)
 ├── models/         # Entidades del dominio (Cliente, Producto, Proveedor, Usuario, Venta, etc.)
 ├── state/          # Estado global de la sesión (usuario logueado, rol activo)
@@ -47,6 +49,7 @@ lib/                # Librerías externas (descargar manualmente, ver instruccio
 ```
 
 Aspectos técnicos destacables:
+
 - Uso de **PreparedStatement** en todas las consultas SQL (prevención de SQL injection).
 - **Hash de contraseñas con BCrypt** (con salt automático), el estándar actual para almacenamiento seguro de contraseñas.
 - Manejo de excepciones con excepciones personalizadas (`DatabaseException`) y logging con `java.util.logging`.
@@ -78,12 +81,15 @@ cd AutoStock
 Las librerías externas no están incluidas en el repositorio. Descárgalas y colócalas en la carpeta `lib/`:
 
 **MySQL Connector/J 9.1.0:**
+
 ```bash
 curl -o lib/mysql-connector-j-9.1.0.jar https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/9.1.0/mysql-connector-j-9.1.0.jar
 ```
 
 **jBCrypt 0.4:**
+
 ```bash
+
 curl -o lib/jbcrypt-0.4.jar https://repo1.maven.org/maven2/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar
 ```
 
@@ -116,6 +122,7 @@ db.password=tu_contraseña
 ### 5. Añadir las librerías al classpath
 
 En VS Code, en el panel **Java Projects → Referenced Libraries**, añade los dos archivos de la carpeta `lib/`:
+
 - `lib/mysql-connector-j-9.1.0.jar`
 - `lib/jbcrypt-0.4.jar`
 
@@ -132,6 +139,7 @@ UPDATE autostock_inventory.Usuario SET id_rol = 1 WHERE email = 'tu@email.com';
 ```
 
 Los roles disponibles son:
+
 - `1` → Administrador (acceso completo)
 - `2` → Empleado (acceso limitado a productos y ventas)
 
@@ -153,5 +161,5 @@ Los roles disponibles son:
 
 ## Autor
 
-**Sara** — DAM, promoción 2024  
-[LinkedIn](#) · [GitHub](https://github.com/sarukiii)
+**Sara** — DAM, promoción 2024
+LinkedIn (próximamente) · [GitHub](https://github.com/sarukiii "GitHub de sarukiii")
